@@ -39,7 +39,7 @@ export default function LoginPage() {
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center">
           <Image
-            src="/logo.svg"
+            src="/logo.png"
             alt="Genesys Logo"
             width={180}
             height={40}

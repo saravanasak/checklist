@@ -15,7 +15,7 @@ export default function Layout({ children, title, subtitle }: LayoutProps) {
         <div className="container mx-auto px-4 flex justify-between items-center">
           <Link href="/" className="flex items-center">
             <Image
-              src="/logo.svg"
+              src="/logo.png"
               alt="Genesys Logo"
               width={180}
               height={40}

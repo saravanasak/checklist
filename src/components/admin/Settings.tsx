@@ -6,7 +6,7 @@ export default function Settings() {
   // General Settings
   const [companyName, setCompanyName] = useState('Genesys');
   const [adminEmail, setAdminEmail] = useState('admin@genesys.com');
-  const [logoUrl, setLogoUrl] = useState('/logo.svg');
+  const [logoUrl, setLogoUrl] = useState('/logo.png');
   const [primaryColor, setPrimaryColor] = useState('#FF4F1F');
   const [secondaryColor, setSecondaryColor] = useState('#0F1941');
   
