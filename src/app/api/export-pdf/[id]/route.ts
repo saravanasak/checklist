@@ -2,19 +2,22 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getSubmissionById } from '@/utils/api';
 import { mapSubmissionResponses } from '@/utils/mappers';
 
-export async function GET(request: NextRequest, { params }: { params: { id: string } }) {
+export async function GET(request: NextRequest) {
   try {
-    const id = params.id;
-    
+    // Extract the id param from the URL
+    const url = new URL(request.url);
+    // /api/export-pdf/[id] => get last segment
+    const id = url.pathname.split('/').pop();
+    if (!id) {
+      return NextResponse.json({ error: 'Missing submission id' }, { status: 400 });
+    }
     // Get the submission data
     const submission = await getSubmissionById(id);
     if (!submission) {
       return NextResponse.json({ error: 'Submission not found' }, { status: 404 });
     }
-    
     // Map the submission data to include the structured responses
     const mappedSubmission = mapSubmissionResponses(submission);
-    
     // In a real application, we would generate a PDF here using a library like PDFKit or jsPDF
     // For this example, we'll just return the data that would be used to generate the PDF
     
