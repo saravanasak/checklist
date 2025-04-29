@@ -10,6 +10,8 @@
     "setup-db": "node scripts/setup-database.js"
   },
   "dependencies": {
+    "@azure/msal-browser": "^4.11.0",
+    "@microsoft/microsoft-graph-client": "^3.0.7",
     "@supabase/supabase-js": "^2.49.4",
     "chart.js": "^4.4.9",
     "html2canvas": "^1.4.1",

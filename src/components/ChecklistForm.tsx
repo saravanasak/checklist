@@ -4,6 +4,8 @@ import { useState, FormEvent, ChangeEvent, useRef } from 'react';
 import { ChecklistSubmission } from '@/types';
 import { submitChecklist } from '@/utils/api';
 import SignatureCanvas from 'react-signature-canvas';
+import { generateChecklistPDF } from '@/utils/pdfGenerator';
+import sharepointService from '@/utils/sharepointService';
 
 export default function ChecklistForm() {
   const [formData, setFormData] = useState<Partial<ChecklistSubmission>>({
@@ -33,9 +35,13 @@ export default function ChecklistForm() {
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
   const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string>('');
+  const [uploadSuccess, setUploadSuccess] = useState(false);
 
   // Signature canvas ref
   const sigCanvas = useRef<SignatureCanvas>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   // Handle input changes
   const handleInputChange = (e: ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -76,34 +82,105 @@ export default function ChecklistForm() {
   // Handle form submission
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    setIsSubmitting(true);
     setError('');
-
+    setUploadError('');
+    
+    // Validate q6 (at least 3 selections required)
+    if (!formData.q6 || formData.q6.length < 3) {
+      setQ6Error('Please select at least 3 options');
+      return;
+    } else {
+      setQ6Error('');
+    }
+    
+    // Check if signature exists
+    if (!sigCanvas.current || sigCanvas.current.isEmpty()) {
+      setError('Please provide your signature before submitting');
+      return;
+    }
+    
+    // Get signature data URL
+    const signatureDataUrl = sigCanvas.current.toDataURL('image/png');
+    
     try {
-      // Only allow drawn signature
-      let signatureValue = '';
-      if (sigCanvas.current) {
-        if (sigCanvas.current.isEmpty()) {
-          setError('Please sign the form');
-          setIsSubmitting(false);
-          return;
-        }
-        signatureValue = sigCanvas.current.getTrimmedCanvas().toDataURL('image/png');
-      }
-
-      // Prepare data for submission
-      const submissionData = {
-        ...formData,
-        signature: signatureValue,
+      setIsSubmitting(true);
+      
+      // Calculate completion percentage
+      const completionPercentage = calculateCompletionPercentage();
+      
+      // Prepare submission data
+      const submissionData: ChecklistSubmission = {
+        ...formData as ChecklistSubmission,
         status: 'complete',
-        completion_percentage: 100,
+        completion_percentage: completionPercentage,
+        signature: signatureDataUrl,
         submission_date: new Date().toISOString()
       };
-
-      await submitChecklist(submissionData as any);
+      
+      // Submit form data to API
+      const response = await fetch('/api/checklist', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(submissionData),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to submit checklist');
+      }
+      
+      const result = await response.json();
+      
+      // Generate PDF
+      try {
+        setIsUploading(true);
+        
+        // Generate PDF from submission data
+        const pdfBlob = await generateChecklistPDF(submissionData, signatureDataUrl);
+        
+        // Create a filename with employee name and date
+        const employeeName = submissionData.employee_name.replace(/\s+/g, '-').toLowerCase();
+        const date = new Date().toISOString().split('T')[0];
+        const filename = `checklist-${employeeName}-${date}.pdf`;
+        
+        // Attempt to upload to SharePoint if SharePoint integration is enabled
+        if (sharepointService) {
+          try {
+            // Check if user is logged in to Microsoft
+            if (!sharepointService.isLoggedIn()) {
+              // Prompt user to login
+              await sharepointService.login();
+            }
+            
+            // Upload PDF to SharePoint
+            await sharepointService.uploadFile(filename, pdfBlob);
+            setUploadSuccess(true);
+          } catch (uploadError) {
+            console.error('Error uploading to SharePoint:', uploadError);
+            setUploadError('Failed to upload PDF to SharePoint. The form was submitted successfully, but the PDF could not be saved to SharePoint.');
+          }
+        }
+        
+        // Allow user to download the PDF locally
+        const downloadLink = document.createElement('a');
+        downloadLink.href = URL.createObjectURL(pdfBlob);
+        downloadLink.download = filename;
+        downloadLink.click();
+        
+      } catch (pdfError) {
+        console.error('Error generating or uploading PDF:', pdfError);
+        setUploadError('Failed to generate or save PDF. The form was submitted successfully, but the PDF could not be created.');
+      } finally {
+        setIsUploading(false);
+      }
+      
+      // Set form as submitted
       setIsSubmitted(true);
-    } catch (err: any) {
-      setError(err.message || 'An error occurred while submitting the checklist.');
+      
+    } catch (error) {
+      console.error('Error submitting form:', error);
+      setError('Failed to submit checklist. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -143,6 +220,8 @@ export default function ChecklistForm() {
     setIsSubmitted(false);
     setError('');
     setQ6Error('');
+    setUploadError('');
+    setUploadSuccess(false);
     if (sigCanvas.current) sigCanvas.current.clear();
   };
 
@@ -673,6 +752,16 @@ export default function ChecklistForm() {
                 {error}
               </div>
             )}
+            {uploadError && (
+              <div className="mt-4 p-3 bg-yellow-100 text-yellow-700 rounded-md">
+                {uploadError}
+              </div>
+            )}
+            {isUploading && (
+              <div className="mt-4 p-3 bg-blue-100 text-blue-700 rounded-md">
+                Generating and uploading PDF...
+              </div>
+            )}
           </div>
         </form>
       ) : (
@@ -680,6 +769,12 @@ export default function ChecklistForm() {
           <h2 className="text-2xl font-semibold text-[#FF4F1F] mb-4">Thank You!</h2>
           <p className="mb-2">Your checklist has been successfully submitted.</p>
           <p className="mb-6">A copy has been sent to HR and your manager.</p>
+          {uploadSuccess && (
+            <p className="mb-6 text-green-600">PDF was successfully saved to SharePoint.</p>
+          )}
+          {uploadError && (
+            <p className="mb-6 text-yellow-600">{uploadError}</p>
+          )}
           <button
             onClick={handleNewForm}
             className="bg-[#0F1941] text-white py-3 px-6 rounded-md font-semibold hover:bg-[#1a2456] transition-colors"
